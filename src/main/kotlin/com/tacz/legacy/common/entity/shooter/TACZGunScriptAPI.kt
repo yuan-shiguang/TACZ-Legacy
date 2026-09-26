@@ -114,7 +114,7 @@ internal class TACZGunScriptAPI {
 
         // 生成子弹
         if (!shooter.world.isRemote) {
-            val bulletData = data.bulletData
+            val bulletData = TACZGunPropertyResolver.resolveEffectiveBulletData(itemStack, gun, data)
             val gunId = gun.getGunId(itemStack)
             val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
             val gunDisplayId = TACZGunPackPresentation.resolveGunDisplayId(snapshot, gunId)

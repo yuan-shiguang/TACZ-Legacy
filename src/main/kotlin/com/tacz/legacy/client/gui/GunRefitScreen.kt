@@ -43,6 +43,7 @@ import net.minecraft.client.settings.KeyBinding
 import net.minecraft.client.util.ITooltipFlag
 import net.minecraft.item.ItemStack
 import net.minecraft.util.ResourceLocation
+import com.tacz.legacy.api.modifier.JsonProperty
 import net.minecraft.util.text.TextComponentTranslation
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
@@ -929,15 +930,20 @@ internal class GunRefitScreen : GuiScreen() {
 			}
 		}
 
-		val adsModifiers = collectNumericModifiers(snapshot, attachmentIds, "ads")
-		val rpmModifiers = collectNumericModifiers(snapshot, attachmentIds, "rpm")
-		val damageModifiers = collectNumericModifiers(snapshot, attachmentIds, "damage")
-		val ammoSpeedModifiers = collectNumericModifiers(snapshot, attachmentIds, "ammo_speed")
-		val armorIgnoreModifiers = collectNumericModifiers(snapshot, attachmentIds, "armor_ignore")
-		val headShotModifiers = collectNumericModifiers(snapshot, attachmentIds, "head_shot")
-		val weightModifiers = collectNumericModifiers(snapshot, attachmentIds, "weight_modifier")
-		val inaccuracyModifiers = collectInaccuracyModifiers(snapshot, attachmentIds)
-		val recoilModifiers = collectRecoilModifiers(snapshot, attachmentIds)
+		// 独占配件（exclusive_attachments）加成：与实战 resolver 一致地计入预览。
+		// 之前这里只看普通已装配件，导致 refit 界面显示的伤害/射速/精度等
+		// 与实际上战场表现不一致（实战早已吃独占加成）。
+		val exclusive = gunEntry.data.exclusiveAttachments
+
+		val adsModifiers = collectNumericModifiers(snapshot, attachmentIds, "ads") + collectExclusiveBonuses(exclusive, attachmentIds, "ads") { it as? Modifier }
+		val rpmModifiers = collectNumericModifiers(snapshot, attachmentIds, "rpm") + collectExclusiveBonuses(exclusive, attachmentIds, "rpm") { it as? Modifier }
+		val damageModifiers = collectNumericModifiers(snapshot, attachmentIds, "damage") + collectExclusiveBonuses(exclusive, attachmentIds, "damage") { it as? Modifier }
+		val ammoSpeedModifiers = collectNumericModifiers(snapshot, attachmentIds, "ammo_speed") + collectExclusiveBonuses(exclusive, attachmentIds, "ammo_speed") { it as? Modifier }
+		val armorIgnoreModifiers = collectNumericModifiers(snapshot, attachmentIds, "armor_ignore") + collectExclusiveBonuses(exclusive, attachmentIds, "armor_ignore") { it as? Modifier }
+		val headShotModifiers = collectNumericModifiers(snapshot, attachmentIds, "head_shot") + collectExclusiveBonuses(exclusive, attachmentIds, "head_shot") { it as? Modifier }
+		val weightModifiers = collectNumericModifiers(snapshot, attachmentIds, "weight_modifier") + collectExclusiveBonuses(exclusive, attachmentIds, "weight_modifier") { it as? Modifier }
+		val inaccuracyModifiers = collectInaccuracyModifiers(snapshot, attachmentIds) + collectExclusiveBonuses(exclusive, attachmentIds, "inaccuracy") { @Suppress("UNCHECKED_CAST") it as? Map<String, Modifier> }
+		val recoilModifiers = collectRecoilModifiers(snapshot, attachmentIds) + collectExclusiveBonuses(exclusive, attachmentIds, "recoil") { it as? TACZRecoilModifierValue }
 		val inaccuracyDefaults = parseInaccuracyDefaults(gunEntry.data.raw, adjust)
 		val recoilDefaults = parseRecoilDefaults(gunEntry.data.raw)
 		val recoilCache = TACZAttachmentModifierRegistry.evalRecoil(recoilModifiers, recoilDefaults.first, recoilDefaults.second)
@@ -994,6 +1000,15 @@ internal class GunRefitScreen : GuiScreen() {
 		return attachmentIds.mapNotNull { attachmentId ->
 			snapshot.attachments[attachmentId]?.data?.modifiers?.get("recoil")?.getValue() as? TACZRecoilModifierValue
 		}
+	}
+
+	private fun <T> collectExclusiveBonuses(
+		exclusive: Map<ResourceLocation, Map<String, JsonProperty<*>>>,
+		attachmentIds: List<ResourceLocation>,
+		key: String,
+		cast: (Any?) -> T?,
+	): List<T> {
+		return attachmentIds.mapNotNull { id -> cast(exclusive[id]?.get(key)?.getValue()) }
 	}
 
 	private fun parseFireModeAdjust(raw: JsonObject, fireMode: FireMode): FireModeAdjust {

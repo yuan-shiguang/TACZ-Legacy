@@ -19,6 +19,7 @@ import com.tacz.legacy.common.resource.GunCombatData
 import com.tacz.legacy.common.resource.GunDataAccessor
 import com.tacz.legacy.common.resource.TACZGunSoundRouting
 import com.tacz.legacy.common.resource.TACZGunPackPresentation
+import com.tacz.legacy.common.resource.TACZGunPropertyResolver
 import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import com.tacz.legacy.sound.SoundManager
 import net.minecraft.entity.EntityLivingBase
@@ -342,7 +343,7 @@ public class LivingEntityShoot(
         val shootInterval = if (fireMode == FireMode.BURST) {
             gunData.getBurstMinIntervalMs()
         } else {
-            gunData.getShootIntervalMs()
+            TACZGunPropertyResolver.resolveEffectiveShootIntervalMs(currentGunItem, iGun, gunData)
         }
 
         var coolDown = shootInterval - interval

@@ -17,6 +17,7 @@ import com.tacz.legacy.common.network.message.client.ClientMessagePlayerShoot
 import com.tacz.legacy.common.resource.BoltType
 import com.tacz.legacy.common.resource.GunCombatData
 import com.tacz.legacy.common.resource.GunDataAccessor
+import com.tacz.legacy.common.resource.TACZGunPropertyResolver
 import com.tacz.legacy.common.resource.TACZGunSoundRouting
 import com.tacz.legacy.sound.SoundManager
 import net.minecraft.client.Minecraft
@@ -215,7 +216,7 @@ internal object LegacyClientShootCoordinator {
         val interval = if (fireMode == FireMode.BURST) {
             (gunData.burstMinInterval * 1000f).toLong()
         } else {
-            gunData.getShootIntervalMs()
+            TACZGunPropertyResolver.resolveEffectiveShootIntervalMs(stack, iGun, gunData)
         }
         var coolDown = interval - (System.currentTimeMillis() - clientShootTimestampMs)
         coolDown -= 5L

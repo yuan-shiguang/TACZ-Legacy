@@ -17,6 +17,7 @@ import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 internal object TACZGunPropertyResolver {
@@ -91,6 +92,117 @@ internal object TACZGunPropertyResolver {
             }
         }
         return gunData.ammoAmount
+    }
+
+    /**
+     * 有效子弹战斗数据 = 基础 bulletData 叠加所有已装配件 / 独占配件的战斗修正
+     * (damage / pierce / knockback / ammo_speed / armor_ignore / head_shot)，
+     * 以及当前射击模式的 fire_mode_adjust 加成。
+     *
+     * 之前这些修正只在 GunRefitScreen 的 UI 预览里出现，实际生成的子弹完全没吃到，
+     * 是所有枪与官版 TACZ 最大的行为差距之一（装上穿甲弹/消音器/高伤枪管却毫无效果）。
+     */
+    internal fun resolveEffectiveBulletData(
+        stack: ItemStack,
+        iGun: IGun,
+        gunData: GunCombatData,
+    ): BulletCombatData {
+        val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
+        val gunId = iGun.getGunId(stack)
+        val raw = snapshot.guns[gunId]?.data?.raw ?: JsonObject()
+        val adjust = parseFireModeAdjust(raw, iGun.getFireMode(stack))
+        val base = gunData.bulletData
+
+        val damageMods = collectNumericModifiers(stack, iGun, gunId, "damage")
+        val pierceMods = collectNumericModifiers(stack, iGun, gunId, "pierce")
+        val knockbackMods = collectNumericModifiers(stack, iGun, gunId, "knockback")
+        val ammoSpeedMods = collectNumericModifiers(stack, iGun, gunId, "ammo_speed")
+        val armorIgnoreMods = collectNumericModifiers(stack, iGun, gunId, "armor_ignore")
+        val headShotMods = collectNumericModifiers(stack, iGun, gunId, "head_shot")
+
+        val effectiveDamage = TACZAttachmentModifierRegistry.evalNumeric(
+            damageMods, (base.damage + adjust.damage).toDouble(),
+        ).toFloat().coerceAtLeast(0f)
+        val effectivePierce = TACZAttachmentModifierRegistry.evalNumeric(
+            pierceMods, base.pierce.toDouble(),
+        ).roundToInt().coerceAtLeast(1)
+        val effectiveKnockback = TACZAttachmentModifierRegistry.evalNumeric(
+            knockbackMods, base.knockback.toDouble(),
+        ).toFloat().coerceAtLeast(0f)
+        val effectiveSpeed = TACZAttachmentModifierRegistry.evalNumeric(
+            ammoSpeedMods, (base.speed + adjust.ammoSpeed).toDouble(),
+        ).toFloat().coerceAtLeast(0f)
+
+        val baseArmorIgnore = base.extraDamageData?.armorIgnore ?: 0f
+        val effectiveArmorIgnore = TACZAttachmentModifierRegistry.evalNumeric(
+            armorIgnoreMods, (baseArmorIgnore + adjust.armorIgnore).toDouble(),
+        ).toFloat().coerceIn(0f, 1f)
+        val baseHeadShot = base.extraDamageData?.headShotMultiplier ?: 1f
+        val effectiveHeadShot = TACZAttachmentModifierRegistry.evalNumeric(
+            headShotMods, (baseHeadShot + adjust.headShot).toDouble(),
+        ).toFloat().coerceAtLeast(0f)
+
+        val effectiveExtra = BulletExtraDamageData(
+            armorIgnore = effectiveArmorIgnore,
+            headShotMultiplier = effectiveHeadShot,
+            damageAdjust = base.extraDamageData?.damageAdjust.orEmpty(),
+        )
+
+        return BulletCombatData(
+            damage = effectiveDamage,
+            speed = effectiveSpeed,
+            gravity = base.gravity,
+            friction = base.friction,
+            pierce = effectivePierce,
+            lifeSecond = base.lifeSecond,
+            bulletAmount = base.bulletAmount,
+            knockback = effectiveKnockback,
+            tracerCountInterval = base.tracerCountInterval,
+            igniteEntity = base.igniteEntity,
+            igniteEntityTime = base.igniteEntityTime,
+            igniteBlock = base.igniteBlock,
+            extraDamageData = effectiveExtra,
+            explosionData = base.explosionData,
+        )
+    }
+
+    /**
+     * 有效射速（RPM）= 基础 rpm + 射击模式 fire_mode_adjust.rpm，
+     * 叠加所有配件 / 独占配件的 rpm 修正。
+     *
+     * 实际射击冷却此前一直用基础 rpm（gunData.getShootIntervalMs()），
+     * 配件增减射速（如枪口制退器、重型枪机）从未生效，这里补上。
+     */
+    internal fun resolveEffectiveRpm(stack: ItemStack, iGun: IGun, gunData: GunCombatData): Int {
+        val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
+        val gunId = iGun.getGunId(stack)
+        val raw = snapshot.guns[gunId]?.data?.raw ?: JsonObject()
+        val adjust = parseFireModeAdjust(raw, iGun.getFireMode(stack))
+        val rpmMods = collectNumericModifiers(stack, iGun, gunId, "rpm")
+        return TACZAttachmentModifierRegistry.evalNumeric(
+            rpmMods, (gunData.roundsPerMinute + adjust.rpm).toDouble(),
+        ).roundToInt().coerceAtLeast(0)
+    }
+
+    /** 基于有效射速的射击间隔（毫秒）。RPM<=0 返回 0（无冷却）。 */
+    internal fun resolveEffectiveShootIntervalMs(stack: ItemStack, iGun: IGun, gunData: GunCombatData): Long {
+        val rpm = resolveEffectiveRpm(stack, iGun, gunData)
+        if (rpm <= 0) return 0L
+        return (60_000L / rpm)
+    }
+
+    private fun collectNumericModifiers(
+        stack: ItemStack,
+        iGun: IGun,
+        gunId: ResourceLocation,
+        modifierKey: String,
+    ): List<Modifier> {
+        val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
+        val attachmentMods = collectAttachmentIds(stack, iGun).mapNotNull { id ->
+            snapshot.attachments[id]?.data?.modifiers?.get(modifierKey)?.getValue() as? Modifier
+        }
+        val exclusiveMods = collectExclusiveBonus(stack, iGun, gunId, modifierKey) { value -> value as? Modifier }
+        return attachmentMods + exclusiveMods
     }
 
     internal fun resolveInaccuracyProfile(stack: ItemStack, iGun: IGun): Map<String, Float> {
