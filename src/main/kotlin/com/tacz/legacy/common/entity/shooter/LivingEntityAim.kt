@@ -29,6 +29,12 @@ public class LivingEntityAim(
 
         data.isAiming = isAiming
         data.aimingTimestamp = System.currentTimeMillis()
+        if (isAiming) {
+            // 开镜会把枪立刻抬到"可射击"姿态：清掉冲刺过渡(sprintTimeS)。
+            // 否则刚冲刺过/边走边开镜时 sprintTimeS 仍 > 0，客户端 attemptShoot 与
+            // 服务端 LivingEntityShoot 都会判成 IS_SPRINTING，表现为"开镜后可能无法开枪"。
+            data.sprintTimeS = 0f
+        }
     }
 
     /**

@@ -34,7 +34,9 @@ public class LivingEntitySprint(
             return
         }
         val isSprinting = shooter.isSprinting
-        if (isSprinting) {
+        // 开镜时视为非冲刺：瞄准姿态下枪已抬起，冲刺过渡要立刻回落到 0，
+        // 否则边走边开镜会一直卡在 IS_SPRINTING，导致"开镜后无法开枪"。
+        if (isSprinting && !data.isAiming) {
             data.sprintTimeS = (data.sprintTimeS + SPRINT_RAMP_PER_TICK).coerceAtMost(MAX_SPRINT_TIME)
         } else {
             if (data.sprintTimeS > 0) {
