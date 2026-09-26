@@ -197,7 +197,10 @@ internal class GunSmithTableScreen(
                 selectedType = tab.id
                 indexPage = 0
                 selectedRecipe = null
-                refreshRecipeState(preserveSelection = false)
+                // 保留刚点选的枪型：preserveSelection=true 才会沿用已设置的 selectedType，
+                // 否则 refreshRecipeState 会把类型重置回 visibleTabs.first()（手枪），
+                // 表现为“工作台一直停在手枪、切不到别的枪型”。
+                refreshRecipeState(preserveSelection = true)
                 rebuildWidgets()
             }
             button.id in BUTTON_RESULT_BASE until BUTTON_PACK_BASE -> {
