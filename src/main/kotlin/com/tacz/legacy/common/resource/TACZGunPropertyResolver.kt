@@ -60,6 +60,39 @@ internal object TACZGunPropertyResolver {
         }
     }
 
+    /**
+     * 当前枪装配的加长弹匣等级（0 = 未装，1..3 = 一至三级）。
+     * 之前 TACZGunScriptAPI.getMagExtentLevel() 写死返回 0，导致 16 把使用
+     * xmag_reload_logic 的枪（ak47 / m4 系 / scar 系 等）完全不识别加长弹匣：
+     * 换弹时序只走基础档、装填容量也被基础弹容卡死。
+     */
+    internal fun resolveMagExtentLevel(stack: ItemStack, iGun: IGun): Int {
+        val id = iGun.getAttachmentId(stack, AttachmentType.EXTENDED_MAG)
+        val effectiveId = if (id != DefaultAssets.EMPTY_ATTACHMENT_ID) {
+            id
+        } else {
+            iGun.getBuiltInAttachmentId(stack, AttachmentType.EXTENDED_MAG)
+        }
+        return GunDataAccessor.getAttachmentExtendedMagLevel(effectiveId)
+    }
+
+    /**
+     * 有效弹匣容量 = 基础弹容 + 加长弹匣加成。
+     * 枪包里 extended_mag_ammo_amount 是每一级的绝对容量数组，level 1 取 [0]。
+     * 与 LegacyGunRefitRuntime.computeAmmoCapacity / 客户端弹容提示保持一致。
+     */
+    internal fun resolveMaxAmmoCount(stack: ItemStack, iGun: IGun, gunData: GunCombatData): Int {
+        val level = resolveMagExtentLevel(stack, iGun)
+        if (level > 0) {
+            val gunId = iGun.getGunId(stack)
+            val arr = TACZGunPackRuntimeRegistry.getSnapshot().guns[gunId]?.data?.extendedMagAmmoAmount
+            if (arr != null && level <= arr.size) {
+                return arr[level - 1].coerceAtLeast(gunData.ammoAmount)
+            }
+        }
+        return gunData.ammoAmount
+    }
+
     internal fun resolveInaccuracyProfile(stack: ItemStack, iGun: IGun): Map<String, Float> {
         val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
         val gunId = iGun.getGunId(stack)

@@ -3,12 +3,14 @@ package com.tacz.legacy.common.entity.shooter
 import com.tacz.legacy.api.DefaultAssets
 import com.tacz.legacy.api.event.GunFireEvent
 import com.tacz.legacy.api.item.IGun
+import com.tacz.legacy.api.item.attachment.AttachmentType
 import com.tacz.legacy.api.item.gun.FireMode
 import com.tacz.legacy.common.entity.EntityKineticBullet
 import com.tacz.legacy.common.item.ModernKineticGunItem
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageGunFire
 import com.tacz.legacy.common.resource.*
+import com.tacz.legacy.common.resource.TACZGunPropertyResolver
 import com.tacz.legacy.sound.SoundManager
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.item.ItemStack
@@ -225,15 +227,24 @@ internal class TACZGunScriptAPI {
 
     fun getNeededAmmoAmount(): Int {
         val gun = iGun ?: return 0
-        val data = gunData ?: return 0
-        return data.ammoAmount - gun.getCurrentAmmoCount(itemStack)
+        return effectiveMaxAmmo() - gun.getCurrentAmmoCount(itemStack)
     }
 
     fun getAmmoAmount(): Int = iGun?.getCurrentAmmoCount(itemStack) ?: 0
 
-    fun getMaxAmmoCount(): Int = gunData?.ammoAmount ?: 0
+    fun getMaxAmmoCount(): Int = effectiveMaxAmmo()
 
-    fun getMagExtentLevel(): Int = 0
+    fun getMagExtentLevel(): Int {
+        val gun = iGun ?: return 0
+        return TACZGunPropertyResolver.resolveMagExtentLevel(itemStack, gun)
+    }
+
+    /** 有效弹匣容量（含加长弹匣加成），与客户端弹容提示、枪匠台一致。 */
+    private fun effectiveMaxAmmo(): Int {
+        val gun = iGun ?: return 0
+        val data = gunData ?: return 0
+        return TACZGunPropertyResolver.resolveMaxAmmoCount(itemStack, gun, data)
+    }
 
     fun hasAmmoToConsume(): Boolean {
         if (!isReloadingNeedConsumeAmmo()) return true
@@ -246,7 +257,7 @@ internal class TACZGunScriptAPI {
         if (amount < 0) return 0
         val gun = iGun ?: return amount
         val data = gunData ?: return amount
-        val maxAmmo = data.ammoAmount
+        val maxAmmo = effectiveMaxAmmo()
         val currentAmmo = gun.getCurrentAmmoCount(itemStack)
         val newAmmo = currentAmmo + amount
         if (maxAmmo < newAmmo) {

@@ -8,6 +8,7 @@ import com.tacz.legacy.common.network.message.event.ServerMessageReload
 import com.tacz.legacy.common.resource.BoltType
 import com.tacz.legacy.common.resource.GunCombatData
 import com.tacz.legacy.common.resource.GunDataAccessor
+import com.tacz.legacy.common.resource.TACZGunPropertyResolver
 import net.minecraft.entity.EntityLivingBase
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.relauncher.Side
@@ -42,8 +43,8 @@ public class LivingEntityReload(
         val currentAmmo = iGun.getCurrentAmmoCount(currentGunItem)
         val hasBulletInBarrel = iGun.hasBulletInBarrel(currentGunItem)
 
-        // 满弹判定
-        val maxAmmo = gunData.ammoAmount
+        // 满弹判定（含加长弹匣扩展容量）
+        val maxAmmo = TACZGunPropertyResolver.resolveMaxAmmoCount(currentGunItem, iGun, gunData)
         val isBarrelFull = hasBulletInBarrel || gunData.boltType == BoltType.OPEN_BOLT
         if (currentAmmo >= maxAmmo && isBarrelFull) return
 
