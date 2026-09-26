@@ -475,7 +475,9 @@ internal class GunSmithTableScreen(
 
     private fun renderPreviewItem(mouseX: Int, mouseY: Int) {
         val recipe = selectedRecipe ?: return
-        val centerX = guiLeft + 68.0f
+        // 预览框中心：主面板（guiLeft+136, guiTop+27, 208x160）左侧深灰预览区域的几何中心。
+        // 原写法 centerX = guiLeft+68 把模型画到了左侧搜索/过滤面板（位置不对），这里校正到预览框。
+        val centerX = guiLeft + 176.0f
         val centerY = guiTop + 92.0f
         val previewYaw = -26.0f + ((centerX - mouseX) * 0.08f).coerceIn(-20.0f, 20.0f)
         val previewPitch = 12.0f + ((centerY - mouseY) * 0.05f).coerceIn(-12.0f, 12.0f)
