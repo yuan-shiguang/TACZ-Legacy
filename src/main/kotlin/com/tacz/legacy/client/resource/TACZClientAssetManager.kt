@@ -270,7 +270,10 @@ internal object TACZClientAssetManager {
         }
         TACZAudioRuntime.reload(ArrayList(packSources), audioReferenceSnapshot)
 
-        // Only keep the vanilla resource-pack bridge alive when explicitly running legacy fallback.
+        // 只在显式启用 vanilla 回退后端时才挂载资源包桥。
+        // 曾经改成"始终安装"，结果每次都会多触发一次完整的 ResourceManager 重载，
+        // 并且让直连 OpenAL 失败的声音掉进 Minecraft SoundHandler，
+        // 对枪包里本就缺失的 ogg 反复报 CodecJOrbis 错误，直接把客户端拖死。
         GunPackSoundResourcePack.synchronize(soundResources, TACZAudioRuntime.shouldUseLegacyMinecraftBridge())
 
         buildAttachmentIndices(snapshot)

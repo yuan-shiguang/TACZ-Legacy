@@ -114,9 +114,21 @@ internal object TACZOpenALSoundEngine {
         trimOldestSourceIfNeeded()
 
         AL10.alGetError()
-        val sourceId = AL10.alGenSources()
-        if (AL10.alGetError() != AL10.AL_NO_ERROR) {
-            return null
+        var sourceId = AL10.alGenSources()
+        if (sourceId == 0 || AL10.alGetError() != AL10.AL_NO_ERROR) {
+            // OpenAL 的 source 是全局共享的，Minecraft 自己的 SoundSystem 也会占用。
+            // 配额耗尽时 alGenSources 会返回 0(AL_NONE)。这里先清掉已播完的、
+            // 再裁掉最老的一批，然后重试一次，避免"偶尔没声"。
+            cleanupFinishedSources()
+            while (activeSources.size >= MAX_CONCURRENT_SOURCES / 2) {
+                val oldest = activeSources.firstOrNull() ?: break
+                stopSource(oldest)
+            }
+            AL10.alGetError()
+            sourceId = AL10.alGenSources()
+            if (sourceId == 0 || AL10.alGetError() != AL10.AL_NO_ERROR) {
+                return null
+            }
         }
 
         return runCatching {

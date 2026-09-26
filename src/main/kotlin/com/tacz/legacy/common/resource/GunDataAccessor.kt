@@ -182,6 +182,7 @@ public class GunCombatData private constructor(
             val meleeObj = raw.safeGetObject("melee")
             val meleeData = if (meleeObj != null) {
                 val cooldown = meleeObj.getAsJsonPrimitive("cooldown")?.asFloat ?: 0.5f
+                val meleeDistance = meleeObj.getAsJsonPrimitive("distance")?.asFloat ?: 0.0f
                 val defaultObj = meleeObj.safeGetObject("default")
                 val defaultData = if (defaultObj != null) {
                     GunDefaultMeleeCombatData(
@@ -196,7 +197,7 @@ public class GunCombatData private constructor(
                         knockback = defaultObj.getAsJsonPrimitive("knockback")?.asFloat ?: 0.0f,
                     )
                 } else null
-                GunMeleeCombatData(cooldown = cooldown, defaultMeleeData = defaultData)
+                GunMeleeCombatData(cooldown = cooldown, distance = meleeDistance, defaultMeleeData = defaultData)
             } else null
 
             val bulletObj = raw.safeGetObject("bullet")
@@ -308,6 +309,13 @@ public enum class BoltType {
 
 public class GunMeleeCombatData(
     public val cooldown: Float,
+    /**
+     * 枪械自身的近战延伸距离。
+     * 枪包注释明确要求它与 default/配件 的距离**做加和**，
+     * 之前这个字段根本没被解析，导致实际攻击距离只有 default.distance(通常 1 格)，
+     * 玩家几乎要贴脸才能命中，表现为"近战打不出伤害"。
+     */
+    public val distance: Float,
     public val defaultMeleeData: GunDefaultMeleeCombatData?,
 )
 

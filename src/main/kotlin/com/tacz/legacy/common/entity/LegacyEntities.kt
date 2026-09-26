@@ -72,6 +72,8 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         private const val DEFAULT_FORWARD_COMPONENT = 8.0
         private const val DEFAULT_INACCURACY_SCALE = 0.007499999832361937
         private const val FOCUSED_SMOKE_BULLET_SPEED_MULTIPLIER_PROPERTY = "tacz.focusedSmoke.bulletSpeedMultiplier"
+        /** 方块命中点至少要离开枪口 0.05 格(平方值)，才认为这是一次有效的方块拦截。 */
+        private const val MIN_BLOCK_HIT_DISTANCE_SQ = 0.0025
 
         internal fun computeShotDirection(pitch: Double, yaw: Double, spreadX: Double, spreadY: Double): Vec3d {
             val direction = Vector3d(spreadX, spreadY, DEFAULT_FORWARD_COMPONENT)
@@ -302,9 +304,12 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         when (result.typeOfHit) {
             RayTraceResult.Type.ENTITY -> {
                 val target = result.entityHit ?: return
+                if (target.isDead) return
                 val hitPos = result.hitVec ?: Vec3d(target.posX, target.posY + target.height * 0.5, target.posZ)
                 val headShot = target is EntityLivingBase && isHeadShot(target, hitPos)
-                if (target != thrower) {
+                // 用 entityId 排除射手，避免 thrower 引用失效后误伤/漏伤
+                val isSelf = shooterEntityId >= 0 && target.entityId == shooterEntityId
+                if (!isSelf) {
                     val feedback = applyDirectHitDamage(target, hitPos, headShot)
                     if (hasExplosion) {
                         triggerExplosion(hitPos)
@@ -489,13 +494,22 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                 }
             }
 
+            // 确保射手可用：从 NBT / 网络恢复的弹道可能解析不到 thrower，
+            // 缺少 attacker 会让 DamageSource 失去归属，进而在 PVP 保护或 Forge 事件里被吞掉。
+            getShooterForRender()
+
             val startVec = Vec3d(posX, posY, posZ)
             var endVec = Vec3d(posX + motionX, posY + motionY, posZ + motionZ)
 
             // 方块碰撞
             val blockResult = world.rayTraceBlocks(startVec, endVec)
             if (blockResult != null && blockResult.typeOfHit == RayTraceResult.Type.BLOCK) {
-                endVec = blockResult.hitVec
+                // 只有方块确实离开枪口时才截断弹道。
+                // 贴墙/贴地开火时子弹可能生成在方块内，hitVec 几乎等于起点，
+                // 直接截断会把实体检测窗口压成 0，表现为"有时打不出伤害"。
+                if (startVec.squareDistanceTo(blockResult.hitVec) > MIN_BLOCK_HIT_DISTANCE_SQ) {
+                    endVec = blockResult.hitVec
+                }
             }
 
             // 实体碰撞
@@ -505,8 +519,14 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
             )
             val hitEntities = mutableListOf<Pair<Entity, Vec3d>>()
             for (entity in entitiesInRange) {
-                if (!entity.canBeCollidedWith()) continue
-                if (entity === thrower && ticksExisted < 5) continue
+                if (entity.isDead) continue
+                // 以"可被攻击"为准，而不是只看 canBeCollidedWith()：
+                // 后者对部分可被伤害的实体会返回 false，导致漏判。
+                val attackable = entity is EntityLivingBase || entity.canBeCollidedWith()
+                if (!attackable) continue
+                // 用 entityId 比较而非引用比较：世界重载/维度切换后 thrower 引用可能失效，
+                // 失效后会把射手自己当成有效目标(或反过来漏掉真正的射手)。
+                if (shooterEntityId >= 0 && entity.entityId == shooterEntityId && ticksExisted < 5) continue
                 val aabb = entity.entityBoundingBox.grow(0.3)
                 val intercept = aabb.calculateIntercept(startVec, endVec)
                 if (intercept != null) {
@@ -531,10 +551,16 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
 
             // 处理方块命中（在实体命中之后，与上游一致）
             if (blockResult != null && blockResult.typeOfHit == RayTraceResult.Type.BLOCK) {
-                if (!net.minecraftforge.event.ForgeEventFactory.onProjectileImpact(this, blockResult)) {
-                    onImpact(blockResult)
+                // 与上面截断 endVec 用的是同一个阈值：
+                // 贴墙/贴地开火时子弹会生成在方块内部，hitVec 几乎等于起点，
+                // 这时不能判定成"撞墙"，否则子弹一出生就被 setDead —— 表现为
+                // 开枪后看不到任何子弹实体、也打不出伤害。
+                if (startVec.squareDistanceTo(blockResult.hitVec) > MIN_BLOCK_HIT_DISTANCE_SQ) {
+                    if (!net.minecraftforge.event.ForgeEventFactory.onProjectileImpact(this, blockResult)) {
+                        onImpact(blockResult)
+                    }
+                    if (isDead) return
                 }
-                if (isDead) return
             }
         }
 

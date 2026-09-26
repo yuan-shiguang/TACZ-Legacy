@@ -87,10 +87,14 @@ internal object TACZAudioRuntime {
         val descriptor = manifest.entries[soundId]
         return when (backendMode) {
             TACZAudioBackendMode.DIRECT_OPENAL -> {
-                val notes = buildString {
+                val probeOk = descriptor != null &&
+                    descriptor.probeStatus.dedicatedCompatible &&
+                    descriptor.assetLocation != null &&
+                    descriptor.exists
+                var notes = buildString {
                     if (descriptor == null) {
                         append("direct-openal-untracked")
-                    } else if (!descriptor.probeStatus.dedicatedCompatible || descriptor.assetLocation == null || !descriptor.exists) {
+                    } else if (!probeOk) {
                         append("direct-openal-blocked")
                     } else {
                         append("direct-openal-submission")
@@ -100,10 +104,25 @@ internal object TACZAudioRuntime {
                         append(it)
                     }
                 }
-                val instance = if (descriptor != null && descriptor.probeStatus.dedicatedCompatible && descriptor.assetLocation != null && descriptor.exists) {
-                    TACZOpenALSoundEngine.play(entity, soundId, volume, pitch, distance)
-                } else {
-                    null
+                var instance: TACZClientSoundHandle? = null
+                if (probeOk) {
+                    instance = TACZOpenALSoundEngine.play(entity, soundId, volume, pitch, distance)
+                    if (instance == null) {
+                        // 资源确实存在且格式兼容，但直连 OpenAL 失败了
+                        // (典型情况：AL source 配额被 Minecraft 自己的 SoundSystem 占满)。
+                        // 这种情况才值得回退到 Minecraft SoundHandler。
+                        //
+                        // 注意：probeOk == false 说明枪包里根本没有这个 ogg，
+                        // 此时回退没有意义 —— 只会让 SoundManager 反复报
+                        // CodecJOrbis "Unable to acquire inputstream" 并拖慢客户端。
+                        val fallback = runCatching {
+                            legacyBackend.play(entity, soundId, volume, pitch, distance, origin)
+                        }.getOrNull()
+                        if (fallback != null) {
+                            instance = fallback
+                            notes = "$notes; fallback-vanilla-backend"
+                        }
+                    }
                 }
                 recordSubmission(
                     TACZAudioSubmissionRecord(

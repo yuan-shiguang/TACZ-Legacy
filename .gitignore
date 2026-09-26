@@ -30,3 +30,6 @@ run
 
 # local agent workflow workspace
 .agent-workspace/
+
+# workbuddy ai local memory / session data
+.workbuddy-ai/
