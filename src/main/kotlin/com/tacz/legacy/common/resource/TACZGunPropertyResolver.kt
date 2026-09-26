@@ -103,7 +103,24 @@ internal object TACZGunPropertyResolver {
             @Suppress("UNCHECKED_CAST")
             snapshot.attachments[attachmentId]?.data?.modifiers?.get("inaccuracy")?.getValue() as? Map<String, Modifier>
         }
-        return TACZAttachmentModifierRegistry.evalInaccuracy(modifiers, defaults)
+        // 独占配件加成（exclusive_attachments）一并计入精度
+        val exclusiveInaccuracy = collectExclusiveBonus(stack, iGun, gunId, "inaccuracy") { value ->
+            @Suppress("UNCHECKED_CAST") value as? Map<String, Modifier>
+        }
+        return TACZAttachmentModifierRegistry.evalInaccuracy(modifiers + exclusiveInaccuracy, defaults)
+    }
+
+    private inline fun <reified T> collectExclusiveBonus(
+        stack: ItemStack,
+        iGun: IGun,
+        gunId: ResourceLocation,
+        modifierKey: String,
+        cast: (Any?) -> T?,
+    ): List<T> {
+        val exclusive = TACZGunPackRuntimeRegistry.getSnapshot().guns[gunId]?.data?.exclusiveAttachments ?: return emptyList()
+        return collectAttachmentIds(stack, iGun).mapNotNull { id ->
+            cast(exclusive[id]?.get(modifierKey)?.getValue())
+        }
     }
 
     internal fun resolveInaccuracy(
@@ -150,7 +167,11 @@ internal object TACZGunPropertyResolver {
         val recoilModifiers = collectAttachmentIds(stack, iGun).mapNotNull { attachmentId ->
             snapshot.attachments[attachmentId]?.data?.modifiers?.get("recoil")?.getValue() as? TACZRecoilModifierValue
         }
-        val recoilCache = TACZAttachmentModifierRegistry.evalRecoil(recoilModifiers, recoilDefaults.first, recoilDefaults.second)
+        // 独占配件加成（exclusive_attachments）一并计入后坐力
+        val exclusiveRecoil = collectExclusiveBonus(stack, iGun, gunId, "recoil") { value ->
+            value as? TACZRecoilModifierValue
+        }
+        val recoilCache = TACZAttachmentModifierRegistry.evalRecoil(recoilModifiers + exclusiveRecoil, recoilDefaults.first, recoilDefaults.second)
         val zoom = iGun.getAimingZoom(stack).coerceAtLeast(1f)
         val aimDenominator = min(sqrt(zoom), 1.5f)
         var aimingRecoilModifier = 1f - aimingProgress + aimingProgress / aimDenominator

@@ -622,7 +622,25 @@ internal class ModernKineticGunItem : Item(), IGun {
     override fun allowAttachment(gun: ItemStack, attachmentItem: ItemStack): Boolean {
         val iAttachment = attachmentItem.item as? IAttachment ?: return false
         val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
-        return TACZGunPackPresentation.allowsAttachment(snapshot, getGunId(gun), iAttachment.getAttachmentId(attachmentItem))
+        val gunId = getGunId(gun)
+        val incomingId = iAttachment.getAttachmentId(attachmentItem)
+        // 独占配件互斥：若本枪定义了 exclusive_attachments，且要装的配件属于该集合，
+        // 而枪上已经装了集合中另一个（不同的）配件，则不允许。
+        // 这样既在安装时拒绝，也会让枪匠台/创意栏自动把冲突配件过滤出可选列表。
+        val exclusive = snapshot.guns[gunId]?.data?.exclusiveAttachments
+        if (exclusive != null && exclusive.containsKey(incomingId)) {
+            for (type in AttachmentType.values()) {
+                if (type == AttachmentType.NONE) continue
+                val installedId = getAttachmentId(gun, type)
+                if (installedId != DefaultAssets.EMPTY_ATTACHMENT_ID &&
+                    installedId != incomingId &&
+                    exclusive.containsKey(installedId)
+                ) {
+                    return false
+                }
+            }
+        }
+        return TACZGunPackPresentation.allowsAttachment(snapshot, gunId, incomingId)
     }
 
     override fun allowAttachmentType(gun: ItemStack, type: AttachmentType): Boolean {

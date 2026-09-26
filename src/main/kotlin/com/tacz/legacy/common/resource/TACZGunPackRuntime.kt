@@ -165,6 +165,7 @@ internal data class TACZGunDataDefinition(
     val weight: Float,
     val aimTime: Float,
     val allowAttachmentTypes: List<String>,
+    val exclusiveAttachments: Map<ResourceLocation, Map<String, JsonProperty<*>>> = emptyMap(),
 )
 
 internal data class TACZAttachmentDataDefinition(
@@ -715,7 +716,27 @@ internal object TACZGunPackScanner {
         weight = jsonObject.floatValue("weight"),
         aimTime = jsonObject.floatValue("aim_time"),
         allowAttachmentTypes = jsonObject.stringArray("allow_attachment_types"),
+        exclusiveAttachments = parseExclusiveAttachments(jsonObject),
     )
+
+    /**
+     * 解析 exclusive_attachments：配件 ID -> 该配件被"独占"装备时获得的额外 modifier 加成。
+     * 这些配件的 modifier 词汇与常规附件一致（ads_addend / inaccuracy_addend /
+     * recoil_modifier / weight 等），直接复用 readModifiers 解析。
+     */
+    private fun parseExclusiveAttachments(jsonObject: JsonObject): Map<ResourceLocation, Map<String, JsonProperty<*>>> {
+        val exclusiveObj = jsonObject.getAsJsonObject("exclusive_attachments") ?: return emptyMap()
+        val result = LinkedHashMap<ResourceLocation, Map<String, JsonProperty<*>>>()
+        exclusiveObj.entrySet().forEach { (key, value) ->
+            if (!value.isJsonObject) return@forEach
+            val id = runCatching { ResourceLocation(key) }.getOrNull() ?: return@forEach
+            val bonus = TACZAttachmentModifierRegistry.readModifiers(value.toString(), value.asJsonObject)
+            if (bonus.isNotEmpty()) {
+                result[id] = bonus
+            }
+        }
+        return result
+    }
 
     private fun parseBlockData(jsonObject: JsonObject): TACZBlockDataDefinition {
         val tabs = jsonObject.getAsJsonArray("tabs")
