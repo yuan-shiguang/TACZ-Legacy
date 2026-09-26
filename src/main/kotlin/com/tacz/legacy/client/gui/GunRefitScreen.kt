@@ -840,10 +840,9 @@ internal class GunRefitScreen : GuiScreen() {
 		if (type == AttachmentType.NONE) {
 			return emptyList()
 		}
-		if (player.capabilities.isCreativeMode) {
-			return LegacyGunRefitRuntime.compatibleCreativeAttachments(currentGunStack(), type)
-				.map { stack -> RefitCandidate(stack = stack) }
-		}
+		// 与上游 TACZ 一致：改装界面的候选配件只来自玩家背包（生存/创造都一样），
+		// 创造模式"无需持有即可自由装配"是附属模组(TaCZ Creative Supplement)才提供的能力。
+		// 之前这里在创造模式下直接列出全部配件，导致"背包里没有的配件也会显示"。
 		val slots = (0 until player.inventory.sizeInventory)
 			.asSequence()
 			.filter { slotIndex -> slotIndex != player.inventory.currentItem }
